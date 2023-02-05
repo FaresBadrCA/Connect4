@@ -40,11 +40,11 @@ public:
 	}
 
 	int ply_score_to_move_score(int ply_score) {
-		return (ply_score / 2) + (ply_score % 2);
+		return (ply_score / 2) + (ply_score % 2); // division truncates towards zero, then we add/subtract 1 if ply_score is odd.
 	}
 
 	int32_t alpha_beta(Position& P);
-	Window negamax(Position &P, int alpha, int beta, int depth);
+	int negamax(Position &P, int alpha, int beta);
 
 	// Go through files in a folder one at a time
 	void test_file(std::string filename, std::ostream& strm);

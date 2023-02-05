@@ -26,100 +26,75 @@ MOVE_SCORE = (PLYSCORE / 2) round away from zero
 */
 
 int32_t Solver::alpha_beta(Position& P) {
-    int alpha = -(Position::HEIGHT * Position::WIDTH) - 1; // -INF
-    int beta = Position::HEIGHT * Position::WIDTH + 1; // +INF
+    int min = -(Position::HEIGHT * Position::WIDTH) - 1; // -INF
+    int max = Position::HEIGHT * Position::WIDTH + 1; // +INF
+    int med = 0;
+    while (max > min) {
+        // For a window [min, max], test if score > med, where med is the largest absolute value of: (min+max)/2 or (min/2) or (max/2)
+        med = min + (max -min) / 2; // Note: (min+max)/2 gets trapped in [-1, 0] window, but min + (max-min)/2 does not
+        if (med >= 0 && med < max / 2) med = max / 2;
+        else if (med <= 0 && med > min / 2) med = min / 2;
 
-    max_depth = 1;
-    depth_limited = true;
-    int depth = 0;
-    Window w(alpha, beta);
-    while (depth_limited) {
-        depth_limited = false;
-        w = negamax(P, w.alpha, w.beta, depth);
-        max_depth++; // iterative deepening
+        int score = negamax(P, med, med + 1); // Check if score is > med or <= med
+        if (score > med) min = score;
+        else max = score;
     }
-    return w.beta;
-}
+    return min;
+}  
 
 // Evaluation interpretation: +x means a win can be forced in x plies
 // -x means the opponent can force a win in x plies
 // 0 means neither player can force a win
-Window Solver::negamax(Position &P, int alpha, int beta, int depth) {
+int Solver::negamax(Position &P, int alpha, int beta) {
+    
     if (P.gameover_zero()) {
         int score = -(Position::BOARD_SIZE - P.nb_moves + 1);
-        return Window(score, score);
+        return score;
     }
 
-    if (P.nb_moves == 42) { 
-        return Window(0, 0); 
+    if (P.nb_moves == 42) {
+        return 0;
     }
-
-    int min = -(Position::BOARD_SIZE - P.nb_moves - 1); // Worst possible score if opponent forces a win in 2 plies
-    int max = (Position::BOARD_SIZE - P.nb_moves) ; // Best possible score if the next move forces a win
-
-    // there is an [alpha beta] window based on prio information
-    // there is a [min, max] window based on how deep we are in the game tree
-    // combine those two into the smallest possible window
-    if (min > alpha) {
-        alpha = min;
-        if (alpha >= beta) return Window(alpha, alpha);
-    }
-
-    if (max < beta) {
-        beta = max;
-        if (alpha >= beta) return Window(alpha, alpha);
-    }
-    
     board key = P.key();
-    T.get(key, alpha, beta);
-    if (alpha >= beta) {
-        return Window(alpha, alpha);
-    }
+    int lower_bound = -(Position::BOARD_SIZE - P.nb_moves - 1);
+    int upper_bound = (Position::BOARD_SIZE - P.nb_moves);
+    T.get(key, lower_bound, upper_bound);
 
-   if (depth >= max_depth) {  
-        depth_limited = true;
-        // we didn't explore this node, but we still got some information. the game is not over yet
-        // the best score our parent can reach is limited here. 
-        // max = P.SCORE(); 
-        // min = ( (Position::WIDTH * Position::HEIGHT) - #moves )
-        return Window(alpha, beta); 
-   }
+    if (lower_bound > alpha) {
+        alpha = lower_bound;
+        if (alpha >= beta) return alpha;
+    }
+    if (upper_bound < beta) {
+        beta = upper_bound;
+        if (alpha >= beta) return beta;
+    }
 
     board legal = P.get_legal();
 
     // There are min and max scores related to how many moves into the game we are.
-    // we can use those to further tighten our alpha beta window
-
-    
+    // we can use those to further tighten our alpha beta window    
     int min_alpha_i = Position::BOARD_SIZE; // Track lowest alpha for any child. used to update parent's Beta.
     for (int i = 0; i < Position::WIDTH; ++i){
         Position next_p(P);
         board move = legal & next_p.COL_MASK(Position::MOVE_ARRAY()[i]);
         if (move) {
             next_p.play_move(move);
-            Window window_i = negamax(next_p, -beta, -alpha, depth + 1);
-            T.put(next_p.key(), window_i.alpha, window_i.beta);
+            int score_i = negamax(next_p, -beta, -alpha);
+            // T.put(next_p.key(), window_i.alpha, window_i.beta);
 
             // parent's score is at least alpha. Equal to -1 * lowest child beta
-            if (-1 * window_i.beta > alpha) {
-                alpha = -1 * window_i.beta;
-            }
-
-            if (window_i.alpha < min_alpha_i) {
-                min_alpha_i = window_i.alpha;
+            if (-1 * score_i > alpha) {
+                alpha = -1 * score_i;
             }
 
             if (alpha >= beta) {
-                break; // no need to keep iterating through the children
+                T.put(key, alpha, upper_bound); // Score >= alpha
+                return alpha; // no need to keep iterating through the children
             }
         }
     }
-
-    // parent's score is at most Beta. If the lowest child score is alpha_i, then parent can at most get -1 * alpha_i
-    if (-1 * min_alpha_i < beta) {
-        beta = -1 * min_alpha_i;
-    }
-    return Window(alpha, beta);
+    T.put(key, lower_bound, alpha); // Score <= alpha
+    return alpha;
 }
 
 // Writes positions, time for evaluation and #positions evaluated into output stream
@@ -140,8 +115,10 @@ void Solver::test_file(std::string filename, std::ostream &strm) {
         int eval = std::stoi(line.substr(space_pos + 1, line.length()));
 
         Position p(moves);
+        
         //p.display();
-
+        //std::cout << line << "\n";
+        
         int ply_score = alpha_beta(p);
 
         // divide ply_score by 2 and round away from zero
