@@ -144,7 +144,7 @@ public:
 
 
 	// Legal moves are those above a placed stone or at the bottom row where there are no stones currently
-	board get_legal() {
+	board get_legal() const {
 		return (all_mask + BOTTOM_MASK()) & BOARD_MASK();
 	}
 
@@ -188,12 +188,12 @@ public:
 	}
 
 	// return a bitmask with moves that win in 1 ply
-	board winning_moves() {
+	board winning_moves() const {
 		return get_threats(current_mask) & get_legal();
 	}
 
 	// Return a bitmask with spots which would make 4 in a row if any one is filled. INCLUDES NON-REAL THREATS IN THE EXTRA ROW
-	board get_threats(board mask) {
+	board get_threats(board mask) const {
 		board result = 0;
 		result |= (mask & mask << 1 & mask << 2) << 1; // Vertical -111
 
@@ -232,6 +232,23 @@ public:
 			else possible = forced_moves; // only possible move is to block the threat
 		}
 		return possible & ~(opponent_threats >> 1); // Legal moves not below a threat
+	}
+
+	static uint8_t popcount(board mask) {
+		#ifndef _MSC_VER
+		#error "__popcount64 only defined for MSVC compiler"
+		#endif
+		return __popcnt64(mask);
+	}
+
+	// For move ordering: The more threats a move creates, the higher its priority.
+	int get_move_priority(board move) const {
+		return popcount( get_threats( current_mask | move) & BOARD_MASK() & ~all_mask );
+	}
+
+	// Return the number of threats the opponent has. Includes threats that cannot be immediately played.
+	int count_opponent_threats() {
+		return popcount( get_threats(current_mask ^ all_mask) & BOARD_MASK() & ~all_mask );
 	}
 
 	void display() {

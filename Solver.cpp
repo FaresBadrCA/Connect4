@@ -1,5 +1,3 @@
-#include "Solver.hpp"
-
 /*
 ALPHA-BETA EXPLAINED:
 
@@ -24,6 +22,10 @@ PLY SCORES:
 MOVE SCORES: are +/- n when there are n/2 (rounded up) spots remaining on the board before the last move
 MOVE_SCORE = (PLYSCORE / 2) round away from zero
 */
+
+#include "Solver.hpp"
+#include "MoveSorter.hpp"
+
 
 int32_t Solver::alpha_beta(Position& P) {
 
@@ -77,23 +79,22 @@ int Solver::negamax(Position &P, int alpha, int beta) {
     // There are min and max scores related to how many moves into the game we are.
     // we can use those to further tighten our alpha beta window    
     int min_alpha_i = Position::BOARD_SIZE; // Track lowest alpha for any child. used to update parent's Beta.
-    for (int i = 0; i < Position::WIDTH; ++i){
+
+    MoveSorter move_sorter(P, nonlosing_moves);
+
+    for ( ScoredMove scored_move : move_sorter.moves_arr){
         Position next_p(P);
-        board move = nonlosing_moves & next_p.COL_MASK(Position::MOVE_ARRAY()[i]);
-        if (move) {
-            next_p.play_move(move);
-            int score_i = negamax(next_p, -beta, -alpha);
-            // T.put(next_p.key(), window_i.alpha, window_i.beta);
+        next_p.play_move(scored_move.move);
+        int score_i = negamax(next_p, -beta, -alpha);
 
-            // parent's score is at least alpha. Equal to -1 * lowest child beta
-            if (-1 * score_i > alpha) {
-                alpha = -1 * score_i;
-            }
+        // parent's score is at least alpha. Equal to -1 * lowest child beta
+        if (-1 * score_i > alpha) {
+            alpha = -1 * score_i;
+        }
 
-            if (alpha >= beta) {
-                T.put(key, alpha, upper_bound); // Score >= alpha
-                return alpha; // no need to keep iterating through the children
-            }
+        if (alpha >= beta) {
+            T.put(key, alpha, upper_bound); // Score >= alpha
+            return alpha; // no need to keep iterating through the children
         }
     }
     T.put(key, lower_bound, alpha); // Score <= alpha
