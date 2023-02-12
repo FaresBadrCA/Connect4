@@ -39,6 +39,21 @@ public:
 		std::cout << "\n";
 	}
 
+	void display_board_with_extra_row(board b) {
+		std::string s;
+		for (int r = Position::HEIGHT; r >= 0; --r) {
+			s.clear();
+			for (int c = 0; c < Position::WIDTH; ++c) {
+				board mask = ((board)1 << (r + c * (Position::HEIGHT + 1)));
+				if (b & mask) { s += "X"; }
+				else { s += "-"; }
+			}
+			std::cout << s << "\n";
+		}
+		std::cout << "\n";
+}
+
+
 	int ply_score_to_move_score(int ply_score) {
 		return (ply_score / 2) + (ply_score % 2); // division truncates towards zero, then we add/subtract 1 if ply_score is odd.
 	}

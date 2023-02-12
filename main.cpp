@@ -6,7 +6,7 @@ int main() {
 	Solver S;
 
 	fs::path test_folder = "Tests";
-	std::string test_filename = "Test_L2_R1";
+	std::string test_filename = "Test_L2_R2";
 
 	// Prepare output file for results of solution
 	std::time_t t = std::time(nullptr);
@@ -15,6 +15,5 @@ int main() {
 
 	std::ofstream strm( std::string(dt_str) + "_" + test_filename + ".csv");
 	std::string test_file_str = test_folder.append(test_filename).string();
-	//std::ostream* strm = &std::cout;
 	S.test_file(test_file_str, strm);
 	}

@@ -187,6 +187,53 @@ public:
 		return ((verti | hori | diag1 | diag2) & BOARD_MASK()) != 0;
 	}
 
+	// return a bitmask with moves that win in 1 ply
+	board winning_moves() {
+		return get_threats(current_mask) & get_legal();
+	}
+
+	// Return a bitmask with spots which would make 4 in a row if any one is filled. INCLUDES NON-REAL THREATS IN THE EXTRA ROW
+	board get_threats(board mask) {
+		board result = 0;
+		result |= (mask & mask << 1 & mask << 2) << 1; // Vertical -111
+
+		board temp = mask & mask << HEIGHT + 1; // Horizontal --11 has bits set in a '1' spot with a '1' to its left
+		result |= (temp & mask << 2 * (HEIGHT + 1)) << (HEIGHT + 1); // 111-
+		result |= (temp & mask << 2 * (HEIGHT + 1)) >> 3 * (HEIGHT + 1); // -111
+		result |= (temp & mask << 3 * (HEIGHT + 1)) >> 2 * (HEIGHT + 1); // 1-11
+		result |= (mask & temp << 2 * (HEIGHT + 1)) >> (HEIGHT + 1); // 11-1
+
+		temp = mask & mask << HEIGHT + 2; // Diagonal 1: right-up
+		result |= (temp & mask << 2 * (HEIGHT + 2)) << (HEIGHT + 2); // Diagonal 111-
+		result |= (temp & mask << 2 * (HEIGHT + 2)) >> 3 * (HEIGHT + 2); // Diagonal -111
+		result |= (temp & mask << 3 * (HEIGHT + 2)) >> 2 * (HEIGHT + 2); // Diagonal 1-11
+		result |= (mask & temp << 2 * (HEIGHT + 2)) >> (HEIGHT + 2); // Diagonal 11-1
+
+		temp = mask & mask << HEIGHT; // Diagonal 2: right-down
+		result |= (temp & mask << 2 * (HEIGHT)) << (HEIGHT); // Diagonal 111-
+		result |= (temp & mask << 2 * (HEIGHT)) >> 3 * (HEIGHT); // Diagonal -111
+		result |= (temp & mask << 3 * (HEIGHT)) >> 2 * (HEIGHT); // Diagonal 1-11
+		result |= (mask & temp << 2 * (HEIGHT)) >> (HEIGHT); // Diagonal 11-1
+
+		return result;
+	}
+
+
+	// Return bitmask with moves that will not lose within 2 plies. Assumes there are no immediately winning moves.
+	board nonlosing_moves() {
+		board opponent_threats = get_threats(current_mask ^ all_mask) & BOARD_MASK(); // Threats on the board
+		board possible = get_legal();
+		board forced_moves = opponent_threats & possible;
+
+		if (forced_moves) {
+			if (forced_moves & (forced_moves - 1)) { // 2 or more bits are set
+				return 0; // 2 or more concurrent threats, so nothing can be played to not lose.
+			}
+			else possible = forced_moves; // only possible move is to block the threat
+		}
+		return possible & ~(opponent_threats >> 1); // Legal moves not below a threat
+	}
+
 	void display() {
 		std::string s;
 		for (int r = HEIGHT - 1; r >= 0; --r) {

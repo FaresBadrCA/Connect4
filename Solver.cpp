@@ -26,6 +26,10 @@ MOVE_SCORE = (PLYSCORE / 2) round away from zero
 */
 
 int32_t Solver::alpha_beta(Position& P) {
+
+    // if P.gameoverzero: return score
+    // if P.winning_moves: return score
+
     int min = -(Position::HEIGHT * Position::WIDTH) - 1; // -INF
     int max = Position::HEIGHT * Position::WIDTH + 1; // +INF
     int med = 0;
@@ -47,14 +51,15 @@ int32_t Solver::alpha_beta(Position& P) {
 // 0 means neither player can force a win
 int Solver::negamax(Position &P, int alpha, int beta) {
     
-    if (P.gameover_zero()) {
-        int score = -(Position::BOARD_SIZE - P.nb_moves + 1);
-        return score;
-    }
-
     if (P.nb_moves == 42) {
         return 0;
     }
+
+    board nonlosing_moves = P.nonlosing_moves();
+    if (!nonlosing_moves) {
+        return -(Position::BOARD_SIZE - P.nb_moves - 1);
+    }
+
     board key = P.key();
     int lower_bound = -(Position::BOARD_SIZE - P.nb_moves - 1);
     int upper_bound = (Position::BOARD_SIZE - P.nb_moves);
@@ -69,14 +74,12 @@ int Solver::negamax(Position &P, int alpha, int beta) {
         if (alpha >= beta) return beta;
     }
 
-    board legal = P.get_legal();
-
     // There are min and max scores related to how many moves into the game we are.
     // we can use those to further tighten our alpha beta window    
     int min_alpha_i = Position::BOARD_SIZE; // Track lowest alpha for any child. used to update parent's Beta.
     for (int i = 0; i < Position::WIDTH; ++i){
         Position next_p(P);
-        board move = legal & next_p.COL_MASK(Position::MOVE_ARRAY()[i]);
+        board move = nonlosing_moves & next_p.COL_MASK(Position::MOVE_ARRAY()[i]);
         if (move) {
             next_p.play_move(move);
             int score_i = negamax(next_p, -beta, -alpha);
@@ -122,10 +125,10 @@ void Solver::test_file(std::string filename, std::ostream &strm) {
         int ply_score = alpha_beta(p);
 
         // divide ply_score by 2 and round away from zero
-        int move_score = ply_score_to_move_score(ply_score);
-
-        assert(move_score == eval);
         auto n_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock.now() - t1).count();
         strm << moves << ", " << n_microseconds << ", " << Position::n_positions_evaluated << "\n";
+
+        int move_score = ply_score_to_move_score(ply_score);
+        assert(move_score == eval);
     }
 }
