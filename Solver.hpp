@@ -51,7 +51,7 @@ public:
 			std::cout << s << "\n";
 		}
 		std::cout << "\n";
-}
+	}
 
 
 	int ply_score_to_move_score(int ply_score) {

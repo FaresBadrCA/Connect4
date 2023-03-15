@@ -26,7 +26,6 @@ MOVE_SCORE = (PLYSCORE / 2) round away from zero
 #include "Solver.hpp"
 #include "MoveSorter.hpp"
 
-
 int32_t Solver::alpha_beta(Position& P) {
 
     // if P.gameoverzero: return score
@@ -57,9 +56,15 @@ int Solver::negamax(Position &P, int alpha, int beta) {
         return 0;
     }
 
-    board nonlosing_moves = P.nonlosing_moves();
-    if (!nonlosing_moves) {
-        return -(Position::BOARD_SIZE - P.nb_moves - 1);
+    if (P.winning_moves()) {
+        return (Position::BOARD_SIZE - P.nb_moves);
+    }
+
+    board nonlosing = P.nonlosing_moves();
+
+    // board nonlosing_moves = P.nonlosing_moves();
+    if (P.win_in_3() & nonlosing) {
+        return (Position::BOARD_SIZE - P.nb_moves - 2);
     }
 
     board key = P.key();
@@ -80,11 +85,16 @@ int Solver::negamax(Position &P, int alpha, int beta) {
     // we can use those to further tighten our alpha beta window    
     int min_alpha_i = Position::BOARD_SIZE; // Track lowest alpha for any child. used to update parent's Beta.
 
-    MoveSorter move_sorter(P, nonlosing_moves);
+    MoveSorter moves;
+    for (int i = Position::WIDTH; i--;) {
+        if (board move = nonlosing & Position::COL_MASK(Position::MOVE_ARRAY()[i])) {
+            moves.add(move, P.get_move_priority(move));
+        }
+    }
 
-    for ( ScoredMove scored_move : move_sorter.moves_arr){
+    while (board next = moves.getNext()) {
         Position next_p(P);
-        next_p.play_move(scored_move.move);
+        next_p.play_move(next);
         int score_i = negamax(next_p, -beta, -alpha);
 
         // parent's score is at least alpha. Equal to -1 * lowest child beta

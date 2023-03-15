@@ -1,33 +1,42 @@
 #pragma once
 
-#include <queue>
-#include <algorithm>
 #include "Position.hpp"
 
-
-struct ScoredMove {
-	board move = 0; // bitmask with move to play
-	int priority_value = 0;
-	
-	ScoredMove(board mask, int val) {
-		move = mask;
-		priority_value = val;
-	};
-};
-
-// Take in a bitmask of possible moves and produce an ordered list of positions
+/**
+* This class helps sorting the next moves
+*
+* You have to add moves first with their score
+* then you can get them back in decreasing score
+*
+* This class implement an insertion sort that is in practice very
+* efficient for small number of move to sort (max is Position::WIDTH)
+* and also efficient if the move are pushed in approximatively increasing
+* order which can be acheived by using a simpler column ordering heuristic.
+*/
 class MoveSorter {
+private:
+    unsigned int size; // number of stored moves
+
+    struct {
+        board move;
+        int score;
+    } entries[Position::WIDTH];
+
 public:
-	std::vector<ScoredMove> moves_arr;
-	MoveSorter(const Position& P, board moves) {
-		moves_arr.reserve(Position::WIDTH);
-		for (int i = 0; i < Position::WIDTH; ++i) {
-			board move = moves & Position::COL_MASK(Position::MOVE_ARRAY()[i]);
-			if (move) {
-				moves_arr.push_back(ScoredMove(move, P.get_move_priority(move)));
-			}
-		}
-		std::sort(moves_arr.begin(), moves_arr.end(), 
-			[](const ScoredMove& m1, const ScoredMove& m2) {return m1.priority_value > m2.priority_value; }); // Want to sort in descending order. ">" operator achieves this.
-	}
+
+    void add(const board move, const int score) {
+        int pos = size++;
+        for (; pos && entries[pos - 1].score > score; --pos) entries[pos] = entries[pos - 1];
+        entries[pos].move = move;
+        entries[pos].score = score;
+    }
+
+    board getNext() {
+        if (size)
+            return entries[--size].move;
+        else
+            return 0;
+    }
+
+    MoveSorter() : size{ 0 } {}
 };

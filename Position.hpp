@@ -31,6 +31,7 @@ private:
 
 public:
 	static inline int n_positions_evaluated; // Counter for total number of positions created so far
+	static inline board threat_pair_masks[10]; // The 10 masks used to check for "win_in_3"
 
 	board current_mask;  // mask showing slots taken by current player
 	board all_mask;		 // mask showing slots taken be either player
@@ -52,6 +53,8 @@ public:
 	static constexpr uint32_t WIDTH = 7;
 	static constexpr uint32_t BOARD_SIZE = HEIGHT * WIDTH;
 
+	static constexpr uint32_t offsets[3] = { HEIGHT, HEIGHT + 1, HEIGHT + 2 }; // Offsets to go diagonal (down slope), horizontal, and diagonal (up slope)
+
 	static constexpr board BOARD_MASK() {
 		return BOTTOM_MASK() * ((1LL << HEIGHT) - 1); // multiplication: {1<<X_i} * {1<<Y_j} = {1<< (X_i + Y_j) } for all combinations (i,j)
 	}
@@ -64,6 +67,15 @@ public:
 		}
 		return b;
 	};
+
+	// bitmask with the extra row at the top of the board set to 1
+	static constexpr board EXTRA_ROW_MASK() {
+		board b = 0;
+		for (int i = 0; i < WIDTH; ++i) {
+			b |= static_cast<board>(1) << ((HEIGHT) + i * (HEIGHT + 1));
+		}
+		return b;
+	}
 
 	// bitmask with '1' in all the top spots
 	static constexpr board TOP_MASK() {
@@ -234,6 +246,94 @@ public:
 		return possible & ~(opponent_threats >> 1); // Legal moves not below a threat
 	}
 
+
+	// 1 -> spot taken by current player
+	// 0 -> spot that is empty
+	// L -> spot that is legal to play
+	// 
+	// PART 1: double threats - That is two threat-generating pairs that share a spot
+	// A threat-generating pair for example is: 11LL. If any 'L' is played, we have a threat in the remaining 'L'. 
+	//
+	// Step 1: Create bitmasks of threat-generating pairs, pairs separated by one spot, 2 spots, or 3 spots:
+	// sep1 group: LL11 -> 0100, 1LL1 -> 0010, 11LL -> 0001 
+	// sep2 group: L1L1 -> 0010, 1L1L -> 0001
+	// sep3 group: L11L -> 0001
+	//
+	// Step 2: Get 3 bitmasks from those 6 as follows: sep1 = disjunction of all masks in sep1 group. sep2 = disjunction of all masks in sep2 group.
+	// Reason: if we skip to the step where we find bits set in more than one mask, we would mark 2 pairs that are identical
+	// For example: 110011 will be present in the 11LL and LL11 masks, but it only counts as one threat pair, so not a double threat.
+	// That is why we compress those 6 masks into 3 masks, so we do not double-count the same threat-generating pair
+	// 
+	// Step 3: Change the sep masks to have all threat-generating spots set to 1:
+	// sep1 |= sep1 left shift by 1.	sep2 |= sep2 left shift by 2	sep3 |= sep3 shift by 3 
+	//
+	// Step 4: do steps 1 and 2 for horizontal, diagonal1 and diagonal2 threats to produce 9 masks (sep1/2/3 3 times)
+	// Step 5: produce one more mask: 11L0 -> 0010 vertical threat generator
+	// Step 6: Find any bit that is set in more than one mask. That is a double threat-generating move.
+	
+	// PART 2: win by threat-generating pair below a threat
+	board win_in_3() {
+		board legal = get_legal();
+		board empty = BOARD_MASK() & ~all_mask;
+		board opponent_immediate_threats = get_threats(current_mask ^ all_mask) & legal;
+
+		if (opponent_immediate_threats) {
+			legal &= opponent_immediate_threats; // The only move we have is to block the threat
+		}
+
+		for (int i = 0; i < 3; ++i) {
+			uint32_t offset = offsets[i];
+			board temp = legal & legal << offset;
+			threat_pair_masks[3 * i + 0] = // sep1
+				temp & (current_mask >> offset) & (current_mask >> 2 * offset) |    // LL11 -> 0100
+				temp & (current_mask << 2 * offset) & (current_mask >> offset) |    // 1LL1 -> 0010
+				temp & (current_mask << 2 * offset) & (current_mask << 3 * offset); // 11LL -> 0001
+			threat_pair_masks[3 * i + 0] |= threat_pair_masks[3 * i + 0] >> offset;
+
+			temp = legal & legal << 2 * offset;
+			threat_pair_masks[3 * i + 1] = // sep2
+				temp & (current_mask << offset) & (current_mask >> offset) |  // L1L1 -> 0010
+				temp & (current_mask << offset) & (current_mask << 3 * offset); // 1L1L -> 0001
+			threat_pair_masks[3 * i + 1] |= threat_pair_masks[3 * i + 1] >> 2 * offset;
+
+			threat_pair_masks[3 * i + 2] = legal & legal << 3 * offset & current_mask << offset & current_mask << 2 * offset; // sep3: L11L -> 0001
+			threat_pair_masks[3 * i + 2] |= threat_pair_masks[3 * i + 2] >> 3 * offset;
+		}
+		threat_pair_masks[9] = current_mask << 2 & current_mask << 1 & legal & empty >> 1; // Vertical 11L0 -> 0010
+
+		board threat_generating_masks = 0; 
+		board result = 0;
+		for (int i = 0; i < 9; ++i) {
+			result |= (threat_generating_masks & threat_pair_masks[i]);
+			threat_generating_masks |= threat_pair_masks[i];
+		}
+
+		// PART 2: win by threat-generating pair below a threat, excluding vertical threat-generator
+		board threats = get_threats(current_mask) & empty;
+		result |= (threats >> 1) & threat_generating_masks;
+
+		// We skipped vertical threat-generators earlier, so we consider them now
+		result |= (threat_generating_masks & threat_pair_masks[9]);
+		threat_generating_masks |= threat_pair_masks[9];
+
+		// PART 3: Win if there is a threat, and there is only one empty spot left that is not directly below a threat.
+		// Additionally,
+		board active_threats = empty & threats;
+		if (active_threats) {
+			board playable_spots = ( (active_threats | EXTRA_ROW_MASK()) - BOTTOM_MASK()) ^ active_threats; // bitmask with the threat and all spots below it
+			playable_spots &= empty & ~(active_threats | active_threats >> 1); // exclude the threat and the spot below it.
+			if (!(playable_spots & (playable_spots - 1))) { // if there is only one spot left
+
+				if (opponent_immediate_threats) {
+					playable_spots &= opponent_immediate_threats; // must block the immediate threat
+				}
+
+				result |= playable_spots; // then that spot is win-in-3
+			}
+		}
+		return result;
+ 	}
+	
 	static uint8_t popcount(board mask) {
 		#ifndef _MSC_VER
 		#error "__popcount64 only defined for MSVC compiler"
@@ -264,5 +364,32 @@ public:
 		}
 		std::cout << "\n";
 	};
+
+	void display_board(board b) {
+		std::string s;
+		for (int r = Position::HEIGHT - 1; r >= 0; --r) {
+			s.clear();
+			for (int c = 0; c < Position::WIDTH; ++c) {
+				if (b & get_mask(r, c)) { s += "X"; }
+				else { s += "-"; }
+			}
+			std::cout << s << "\n";
+		}
+		std::cout << "\n";
+	}
+
+	void display_board_with_extra_row(board b) {
+		std::string s;
+		for (int r = Position::HEIGHT; r >= 0; --r) {
+			s.clear();
+			for (int c = 0; c < Position::WIDTH; ++c) {
+				board mask = ((board)1 << (r + c * (Position::HEIGHT + 1)));
+				if (b & mask) { s += "X"; }
+				else { s += "-"; }
+			}
+			std::cout << s << "\n";
+		}
+		std::cout << "\n";
+	}
 
 };
