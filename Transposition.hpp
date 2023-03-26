@@ -3,43 +3,40 @@
 
 class TranspositionTable {
 private:
-	// 32452867  67867979  122949829
-	static constexpr uint64_t TABLE_SIZE = 67867979;
+	// 4048831 8388617 32452867  67867979  122949829
+	static constexpr uint64_t TABLE_SIZE = 8388617; // Observation: Larger tables run slower
 
 public:
-	std::array<uint64_t, TABLE_SIZE>* K; // heap-allocated
-	std::array<int8_t, TABLE_SIZE>* V_a; // alpha
-	std::array<int8_t, TABLE_SIZE>* V_b; // beta
+	// By Chinese Remainder Theorem, for any position P < 2^49
+	// the pair: r1 = P % TABLE_SIZE and r2 = P % 2^32 correspond to a unique position P, as long as P <  TABLE_SIZE * 2^32 
+	// Therefore, minimum table size is 2^17 = 131,072
+	uint32_t* K; // Only last 32 bits kept from 64-bit key. 
+	int8_t* V;
 
 	TranspositionTable() {
-		K = new std::array<uint64_t, TABLE_SIZE>;
-		V_a = new std::array<int8_t, TABLE_SIZE>;
-		V_b = new std::array<int8_t, TABLE_SIZE>;
-		K->fill(0); // We never have a key of zero, so this value indicated no key in that slot
+		K = new uint32_t[TABLE_SIZE];
+		V = new int8_t[TABLE_SIZE];
+
+		memset(K, 0, TABLE_SIZE * sizeof(uint32_t));
+		memset(V, 0, TABLE_SIZE * sizeof(int8_t));
 	}
 
 	~TranspositionTable() {
-		delete K;
-		delete V_a;
-		delete V_b;
+		delete[] K;
+		delete[] V;
 	}
 
-	void put(uint64_t key, int alpha, int beta) {
-		// std::cout << "Write key: " << key << " With alpha/beta: " << alpha << "/" << beta << "\n";
+	void put(uint64_t key, int val) {
 		uint64_t ind = key % TABLE_SIZE;
-		K->at(ind) = key;
-		V_a->at(ind) = alpha;
-		V_b->at(ind) = beta;
+		K[ind] = key; // key is truncated to 32 bits
+		V[ind] = val;
 	}
 
-	bool get(uint64_t key, int& alpha, int& beta) {
+	int8_t get(uint64_t key) {
 		uint64_t ind = key % TABLE_SIZE;
-		if (K->at(ind) == key) {
-			alpha = V_a->at(ind);
-			beta = V_b->at(ind);
-			return true;
+		if (K[ind] == (uint32_t)key) {
+			return V[ind];
 		}
-		return false;
+		else return 0;
 	}
-
 };

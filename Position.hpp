@@ -26,6 +26,10 @@ Ply Score is -1 for losing on the last move and decreases by 1 for losing a ply 
 
 typedef uint64_t board;
 
+constexpr static uint64_t bottom(int width, int height) {
+	return width == 0 ? 0 : bottom(width - 1, height) | 1LL << (width - 1) * (height + 1);
+}
+
 class Position {
 private:
 
@@ -49,86 +53,17 @@ public:
 		play_moves_one_ind(moves);
 	}
 
-	static constexpr uint32_t HEIGHT = 6;
-	static constexpr uint32_t WIDTH = 7;
-	static constexpr uint32_t BOARD_SIZE = HEIGHT * WIDTH;
+	static constexpr int32_t HEIGHT = 6;
+	static constexpr int32_t WIDTH = 7;
+	static constexpr int32_t BOARD_SIZE = HEIGHT * WIDTH;
+	static const int MIN_SCORE = -(WIDTH * HEIGHT) / 2 + 3;
+	static const int MAX_SCORE = (WIDTH * HEIGHT + 1) / 2 - 3;
 
-	static constexpr uint32_t offsets[3] = { HEIGHT, HEIGHT + 1, HEIGHT + 2 }; // Offsets to go diagonal (down slope), horizontal, and diagonal (up slope)
-
-	static constexpr board BOARD_MASK() {
-		return BOTTOM_MASK() * ((1LL << HEIGHT) - 1); // multiplication: {1<<X_i} * {1<<Y_j} = {1<< (X_i + Y_j) } for all combinations (i,j)
-	}
-
-	// bitmask with '1' in all the bottom spots
-	static constexpr board BOTTOM_MASK() {
-		board b = 0;
-		for (int i = 0; i < WIDTH; ++i) {
-			b |= static_cast<board>(1) << ( i * (HEIGHT+1) );
-		}
-		return b;
-	};
-
-	// bitmask with the extra row at the top of the board set to 1
-	static constexpr board EXTRA_ROW_MASK() {
-		board b = 0;
-		for (int i = 0; i < WIDTH; ++i) {
-			b |= static_cast<board>(1) << ((HEIGHT) + i * (HEIGHT + 1));
-		}
-		return b;
-	}
-
-	// bitmask with '1' in all the top spots
-	static constexpr board TOP_MASK() {
-		board b = 0;
-		for (int i = 0; i < WIDTH; ++i) {
-			b |= static_cast<board>(1) << ((HEIGHT - 1) + i * (HEIGHT+1) );
-		}
-		return b;
-	};
-
-	// Bitmask with top N rows set 
-	static constexpr board TOP_N_MASK(int n) {
-		board b = 0;
-		for (int i = 0; i < n; ++i) {
-			b |= TOP_MASK() >> i;
-		}
-		return b;
-	};
-
-	// Bitmask with bottom N rows set 
-	static constexpr board BOTTOM_N_MASK(int n) {
-		board b = 0;
-		for (int i = 0; i < n; ++i) {
-			b |= (TOP_MASK() >> (HEIGHT - 1) ) << i;
-		}
-		return b;
-	};
-
-	// Bitmask with rightmost N columns set
-	static constexpr board RIGHT_N_MASK(int n) {
-		board b = 0;
-		for (int i = WIDTH - 1; i > WIDTH - 1 - n; --i) {
-			b |= COL_MASK(0) << (i * (HEIGHT+1) );
-		}
-		return b;
-	}
-
-	static constexpr std::array<int, WIDTH> MOVE_ARRAY() {
-		std::array<int, WIDTH> moves;
-		for (int i = 0; i < WIDTH; ++i) {
-			moves[i] = i;
-		}
-		return moves;
-	}
+	static constexpr int32_t offsets[3] = { HEIGHT, HEIGHT + 1, HEIGHT + 2 }; // Offsets to go diagonal (down slope), horizontal, and diagonal (up slope)
 
 	// bitmask with '1' in the bottom spot of a given column
 	static constexpr board BOTTOM_MASK_COL(int col) {
 		return static_cast<board>(1) << (col * (HEIGHT+1));
-	};
-
-	// bitmask with '1' in the top spot of a given column
-	static constexpr board TOP_MASK_COL(int col) {
-		return static_cast<board>(1) << (HEIGHT - 1 + (col * HEIGHT));
 	};
 
 	// bitmask with '1' in all spots in a given column
@@ -136,28 +71,13 @@ public:
 		return ((static_cast<board>(1) << (HEIGHT)) - 1) << (col * (HEIGHT + 1));
 	}
 
-	// If game ends on the 42nd move, score is +1. If it ends one move before that, score is +2, etc...
-	// Negative score if the end is a loss for the current player.
-	int32_t SCORE() {return (HEIGHT * WIDTH) + 1 - nb_moves;}
-	
+	int moveScore(uint64_t move) const {
+		return popcount(get_threats(current_mask | move) & (BOARD_MASK ^ all_mask));
+	}
+
+
 	board key() {
 		return current_mask + all_mask;
-	}
-
-	board get_mask(uint32_t row, uint32_t col) {
-		assert(row <= HEIGHT - 1 && row >= 0);
-		assert(col <= WIDTH - 1 && col >= 0);
-		return ((board)1 << (row + col * (HEIGHT+1)));
-	}
-
-	board get_mask(uint32_t pos) {
-		return (board)1 << pos;
-	}
-
-
-	// Legal moves are those above a placed stone or at the bottom row where there are no stones currently
-	board get_legal() const {
-		return (all_mask + BOTTOM_MASK()) & BOARD_MASK();
 	}
 
 	// 'm' is a bitboard with only one bit set, and should be a legal move
@@ -189,6 +109,7 @@ public:
 	}
 
 	// return True if the last player who moved has connected 4 pieces
+	/*
 	bool gameover_zero() {
 		board next_mask = current_mask ^ all_mask;
 		board verti = next_mask & (next_mask << 1) & (next_mask << 2) & (next_mask << 3) & TOP_N_MASK(Position::HEIGHT - 3);
@@ -198,6 +119,7 @@ public:
 
 		return ((verti | hori | diag1 | diag2) & BOARD_MASK()) != 0;
 	}
+	*/
 
 	// return a bitmask with moves that win in 1 ply
 	board winning_moves() const {
@@ -233,7 +155,7 @@ public:
 
 	// Return bitmask with moves that will not lose within 2 plies. Assumes there are no immediately winning moves.
 	board nonlosing_moves() {
-		board opponent_threats = get_threats(current_mask ^ all_mask) & BOARD_MASK(); // Threats on the board
+		board opponent_threats = get_threats(current_mask ^ all_mask) & BOARD_MASK; // Threats on the board
 		board possible = get_legal();
 		board forced_moves = opponent_threats & possible;
 
@@ -246,6 +168,13 @@ public:
 		return possible & ~(opponent_threats >> 1); // Legal moves not below a threat
 	}
 
+	// Legal moves are those above a placed stone or at the bottom row where there are no stones currently
+	uint64_t get_legal() const {
+		return (all_mask + BOTTOM_MASK) & BOARD_MASK;
+	}
+
+	const static uint64_t BOTTOM_MASK = bottom(WIDTH, HEIGHT);
+	const static uint64_t BOARD_MASK = BOTTOM_MASK * ((1LL << HEIGHT) - 1);
 
 	// 1 -> spot taken by current player
 	// 0 -> spot that is empty
@@ -272,9 +201,10 @@ public:
 	// Step 6: Find any bit that is set in more than one mask. That is a double threat-generating move.
 	
 	// PART 2: win by threat-generating pair below a threat
+	/*
 	board win_in_3() {
 		board legal = get_legal();
-		board empty = BOARD_MASK() & ~all_mask;
+		board empty = BOARD_MASK & ~all_mask;
 		board opponent_immediate_threats = get_threats(current_mask ^ all_mask) & legal;
 
 		if (opponent_immediate_threats) {
@@ -320,7 +250,7 @@ public:
 		// Additionally,
 		board active_threats = empty & threats;
 		if (active_threats) {
-			board playable_spots = ( (active_threats | EXTRA_ROW_MASK()) - BOTTOM_MASK()) ^ active_threats; // bitmask with the threat and all spots below it
+			board playable_spots = ( (active_threats | EXTRA_ROW_MASK()) - BOTTOM_MASK) ^ active_threats; // bitmask with the threat and all spots below it
 			playable_spots &= empty & ~(active_threats | active_threats >> 1); // exclude the threat and the spot below it.
 			if (!(playable_spots & (playable_spots - 1))) { // if there is only one spot left
 
@@ -333,7 +263,7 @@ public:
 		}
 		return result;
  	}
-	
+	*/
 	static uint8_t popcount(board mask) {
 		#ifndef _MSC_VER
 		#error "__popcount64 only defined for MSVC compiler"
@@ -341,14 +271,22 @@ public:
 		return __popcnt64(mask);
 	}
 
-	// For move ordering: The more threats a move creates, the higher its priority.
-	int get_move_priority(board move) const {
-		return popcount( get_threats( current_mask | move) & BOARD_MASK() & ~all_mask );
-	}
-
 	// Return the number of threats the opponent has. Includes threats that cannot be immediately played.
 	int count_opponent_threats() {
-		return popcount( get_threats(current_mask ^ all_mask) & BOARD_MASK() & ~all_mask );
+		return popcount( get_threats(current_mask ^ all_mask) & BOARD_MASK & ~all_mask );
+	}
+
+
+	//******* DISPLAY FUNCTIONS ********* //
+
+	board get_mask(uint32_t row, uint32_t col) {
+		assert(row <= HEIGHT - 1 && row >= 0);
+		assert(col <= WIDTH - 1 && col >= 0);
+		return ((board)1 << (row + col * (HEIGHT + 1)));
+	}
+
+	board get_mask(uint32_t pos) {
+		return (board)1 << pos;
 	}
 
 	void display() {

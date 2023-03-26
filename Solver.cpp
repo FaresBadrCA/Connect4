@@ -26,23 +26,25 @@ MOVE_SCORE = (PLYSCORE / 2) round away from zero
 #include "Solver.hpp"
 #include "MoveSorter.hpp"
 
-int32_t Solver::alpha_beta(Position& P) {
+// Constructor
+Solver::Solver() : nodeCount{ 0 } {
+    for (int i = 0; i < Position::WIDTH; i++)
+        columnOrder[i] = Position::WIDTH / 2 + (1 - 2 * (i % 2)) * (i + 1) / 2;
+    // initialize the column exploration order, starting with center columns
+    // example for WIDTH=7: columnOrder = {3, 4, 2, 5, 1, 6, 0}
+}
 
-    // if P.gameoverzero: return score
-    // if P.winning_moves: return score
+int32_t Solver::alpha_beta(Position& P) {
 
     int min = -(Position::HEIGHT * Position::WIDTH) - 1; // -INF
     int max = Position::HEIGHT * Position::WIDTH + 1; // +INF
-    int med = 0;
-    while (max > min) {
-        // For a window [min, max], test if score > med, where med is the largest absolute value of: (min+max)/2 or (min/2) or (max/2)
-        med = min + (max -min) / 2; // Note: (min+max)/2 gets trapped in [-1, 0] window, but min + (max-min)/2 does not
-        if (med >= 0 && med < max / 2) med = max / 2;
-        else if (med <= 0 && med > min / 2) med = min / 2;
-
-        int score = negamax(P, med, med + 1); // Check if score is > med or <= med
-        if (score > med) min = score;
-        else max = score;
+    while (min < max) {                    // iteratively narrow the min-max exploration window
+        int med = min + (max - min) / 2;
+        if (med <= 0 && min / 2 < med) med = min / 2;
+        else if (med >= 0 && max / 2 > med) med = max / 2;
+        int r = negamax(P, med, med + 1);   // use a null depth window to know if the actual score is greater or smaller than med
+        if (r <= med) max = r;
+        else min = r;
     }
     return min;
 }  
@@ -52,62 +54,72 @@ int32_t Solver::alpha_beta(Position& P) {
 // 0 means neither player can force a win
 int Solver::negamax(Position &P, int alpha, int beta) {
     
-    if (P.nb_moves == 42) {
+    board possible = P.nonlosing_moves();
+
+    if (!possible) {
+        return -(Position::BOARD_SIZE - P.nb_moves) / 2; // -(Position::BOARD_SIZE - P.nb_moves - 1);
+    }
+
+    if (P.nb_moves >= Position::BOARD_SIZE - 2) {
         return 0;
     }
 
-    if (P.winning_moves()) {
-        return (Position::BOARD_SIZE - P.nb_moves);
-    }
-
-    board nonlosing = P.nonlosing_moves();
-
     // board nonlosing_moves = P.nonlosing_moves();
-    if (P.win_in_3() & nonlosing) {
-        return (Position::BOARD_SIZE - P.nb_moves - 2);
-    }
+    //if (P.win_in_3() & nonlosing) {
+    //    return (Position::BOARD_SIZE - P.nb_moves - 2);
+    //}
 
-    board key = P.key();
-    int lower_bound = -(Position::BOARD_SIZE - P.nb_moves - 1);
-    int upper_bound = (Position::BOARD_SIZE - P.nb_moves);
-    T.get(key, lower_bound, upper_bound);
-
+    int lower_bound = -(Position::BOARD_SIZE - 2 - P.nb_moves) / 2;  // we're not losing this round so lower bound is losing in 4 plies
     if (lower_bound > alpha) {
         alpha = lower_bound;
         if (alpha >= beta) return alpha;
     }
+
+    int upper_bound = (Position::BOARD_SIZE - 1 - P.nb_moves) / 2; // we're not winning this round, so upper bound is winning in 3 plies
     if (upper_bound < beta) {
         beta = upper_bound;
-        if (alpha >= beta) return beta;
+        if (alpha >= beta ) return beta ;
     }
 
-    // There are min and max scores related to how many moves into the game we are.
-    // we can use those to further tighten our alpha beta window    
-    int min_alpha_i = Position::BOARD_SIZE; // Track lowest alpha for any child. used to update parent's Beta.
-
-    MoveSorter moves;
-    for (int i = Position::WIDTH; i--;) {
-        if (board move = nonlosing & Position::COL_MASK(Position::MOVE_ARRAY()[i])) {
-            moves.add(move, P.get_move_priority(move));
+    board key = P.key();
+    int val = T.get(key);
+    if (val) {
+        if (val < 0) { // we have an lower bound
+            lower_bound = val + Position::MAX_SCORE + 1;
+            if (alpha < lower_bound) {
+                alpha = lower_bound;                     // there is no need to keep beta above our max possible score.
+                if (alpha >= beta) return alpha;  // prune the exploration if the [alpha;beta] window is empty.
+            }
+        }
+        else { // we have an upper bound
+            upper_bound = val - Position::MAX_SCORE - 1;
+            if (beta > upper_bound) {
+                beta = upper_bound;                     // there is no need to keep beta above our max possible score.
+                if (alpha >= beta) return beta;  // prune the exploration if the [alpha;beta] window is empty.
+            }
         }
     }
+
+    MoveSorter moves;
+    for (int i = Position::WIDTH; i--; )
+        if (uint64_t move = possible & Position::COL_MASK(columnOrder[i]))
+            moves.add(move, P.moveScore(move));
 
     while (board next = moves.getNext()) {
         Position next_p(P);
         next_p.play_move(next);
-        int score_i = negamax(next_p, -beta, -alpha);
+        int score = -negamax(next_p, -beta, -alpha);
 
-        // parent's score is at least alpha. Equal to -1 * lowest child beta
-        if (-1 * score_i > alpha) {
-            alpha = -1 * score_i;
+        if (score >= beta) {
+            T.put(key, score - Position::MAX_SCORE - 1); // save the lower bound of the position
+            return score; // no need to keep iterating through the children
         }
 
-        if (alpha >= beta) {
-            T.put(key, alpha, upper_bound); // Score >= alpha
-            return alpha; // no need to keep iterating through the children
+        if (score > alpha) {
+            alpha = score;
         }
     }
-    T.put(key, lower_bound, alpha); // Score <= alpha
+    T.put(key, alpha + Position::MAX_SCORE + 1); // save the upper bound of the position
     return alpha;
 }
 
@@ -122,24 +134,24 @@ void Solver::test_file(std::string filename, std::ostream &strm) {
     }
 
     auto clock = std::chrono::steady_clock();
+    long long total_microseconds = 0;
     while (std::getline(f, line)) {
         auto t1 = clock.now();
         std::size_t space_pos = line.find(" ");
         std::string moves = line.substr(0, line.find(" "));
         int eval = std::stoi(line.substr(space_pos + 1, line.length()));
 
-        Position p(moves);
-        
-        //p.display();
-        //std::cout << line << "\n";
-        
-        int ply_score = alpha_beta(p);
+        Position p(moves);        
+        int move_score = alpha_beta(p);
 
         // divide ply_score by 2 and round away from zero
         auto n_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock.now() - t1).count();
+        total_microseconds += n_microseconds;
         strm << moves << ", " << n_microseconds << ", " << Position::n_positions_evaluated << "\n";
 
-        int move_score = ply_score_to_move_score(ply_score);
+        // move_score = ply_score_to_move_score(move_score);
         assert(move_score == eval);
     }
+    std::cout << "Total #Seconds: " << total_microseconds / 1e6 << "\n";
+    std::cout << "Total #Positions: " << Position::n_positions_evaluated << "\n";
 }

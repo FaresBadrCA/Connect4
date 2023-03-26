@@ -22,6 +22,7 @@ private:
         int score;
     } entries[Position::WIDTH];
 
+
 public:
 
     void add(const board move, const int score) {
@@ -38,5 +39,5 @@ public:
             return 0;
     }
 
-    MoveSorter() : size{ 0 } {}
+    MoveSorter() : size{ 0 } { }
 };

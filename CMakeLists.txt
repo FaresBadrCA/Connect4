@@ -5,7 +5,7 @@ cmake_minimum_required (VERSION 3.8)
 
 project ("C4AlphaBeta")
 
-add_executable(C4AlphaBeta 
+add_executable(C4AlphaBeta
     main.cpp
     Solver.cpp
 )

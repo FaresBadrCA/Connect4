@@ -8,17 +8,14 @@
 #include "Position.hpp"
 #include "Transposition.hpp"
 
-// returning from a depth-limited negamax returns a window of possible values
-struct Window {
-	int alpha;
-	int beta;
-};
-
 class Solver {
 public:
+	unsigned long long nodeCount; // counter of explored nodes.
+	int columnOrder[Position::WIDTH]; // column exploration order
+
 	TranspositionTable T;
-	bool depth_limited = true; // Change to false when deeper search will not change evaluation, so search is complete
-	int max_depth = 1; 
+
+	Solver();
 
 	board get_mask(uint32_t row, uint32_t col) {
 		assert(row <= Position::HEIGHT - 1 && row >= 0);
